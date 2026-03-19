@@ -1,6 +1,6 @@
 /**
  * Egyszerűsített számla XML generátor – NAV Online Számla V3.0
- * Adományokhoz optimalizált, magánszemély vevővel
+ * Szolgáltatás: kreatív workshop díj – 27% ÁFA
  * 
  * Referencia: https://github.com/nav-gov-hu/Online-Invoice
  */
@@ -20,13 +20,15 @@ function escapeXml(str) {
     .replace(/'/g, '&apos;');
 }
 
+const VAT_RATE = 0.27; // 27% – szabályos ÁFA
+
 /**
- * Egyszerűsített számla XML összeállítása adományhoz
+ * Egyszerűsített számla XML – kreatív workshop díj, 27% ÁFA
  * @param {Object} params
- * @param {string} params.invoiceNumber - Számlaszáml (pl. "DOM-2025-0001")
+ * @param {string} params.invoiceNumber - Számlaszám
  * @param {string} params.issueDate - YYYY-MM-DD
- * @param {number} params.amount - Összeg HUF-ban
- * @param {string} [params.customerName] - Vevő neve (ha nincs: "Adományozó")
+ * @param {number} params.amount - Bruttó összeg HUF-ban (vevő által fizetett)
+ * @param {string} [params.customerName] - Vevő neve
  * @param {string} [params.customerEmail] - Email (opcionális)
  * @param {Object} [params.customerAddress] - { postalCode, city, addressLine1, addressLine2 }
  * @param {string} [params.stripePaymentId] - Stripe payment ID (megjegyzéshez)
@@ -36,7 +38,7 @@ export function buildSimplifiedDonationInvoice(params) {
     invoiceNumber,
     issueDate,
     amount,
-    customerName = 'Adományozó',
+    customerName = 'Vevő',
     customerEmail,
     customerAddress,
     stripePaymentId,
@@ -69,27 +71,26 @@ export function buildSimplifiedDonationInvoice(params) {
   const invoiceAppearance = 'PAPER'; // PAPER vagy ELECTRONIC
 
   const lineDescription = stripePaymentId
-    ? `Adomány – Stripe fizetés: ${stripePaymentId}`
-    : 'Adomány a CGCOMET kreatív stúdió számára';
+    ? `Kreatív workshop díj – Stripe: ${stripePaymentId}`
+    : 'Kreatív workshop díj';
 
-  // Egyetlen tétel: adomány, adómentes (ÁFA tv. 86. §)
+  const lineNetAmount = Math.round(amount / (1 + VAT_RATE));
+  const lineVatAmount = amount - lineNetAmount;
+  const unitPrice = lineNetAmount;
+
   const lineItemXml = `
     <lineNumber>1</lineNumber>
     <lineExpressionIndicator>false</lineExpressionIndicator>
     <lineDescription>${escapeXml(lineDescription)}</lineDescription>
     <quantity>1</quantity>
     <unitOfMeasure>PIECE</unitOfMeasure>
-    <unitPrice>${amount}</unitPrice>
+    <unitPrice>${unitPrice}</unitPrice>
     <lineAmountsSimplified>
-      <lineNetAmount>${amount}</lineNetAmount>
-      <lineVatAmount>0</lineVatAmount>
+      <lineNetAmount>${lineNetAmount}</lineNetAmount>
+      <lineVatAmount>${lineVatAmount}</lineVatAmount>
       <lineGrossAmountSimplified>${amount}</lineGrossAmountSimplified>
     </lineAmountsSimplified>
-    <lineNatureIndicator>SERVICE</lineNatureIndicator>
-    <vatExemption>
-      <vatExemptionReasonCode>TAM</vatExemptionReasonCode>
-      <vatExemptionReason>Adómentes ÁFA tv. 86.§ (1)</vatExemptionReason>
-    </vatExemption>`;
+    <lineNatureIndicator>SERVICE</lineNatureIndicator>`;
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="${XML_NS}" xmlns:common="${COMMON_NS}">
@@ -126,12 +127,9 @@ export function buildSimplifiedDonationInvoice(params) {
         ${lineItemXml}
       </lineItem>
       <summaryByVatRate>
-        <vatExemption>
-          <vatExemptionReasonCode>TAM</vatExemptionReasonCode>
-          <vatExemptionReason>Adómentes ÁFA tv. 86.§ (1)</vatExemptionReason>
-        </vatExemption>
-        <vatRateNetAmount>${amount}</vatRateNetAmount>
-        <vatRateVatAmount>0</vatRateVatAmount>
+        <vatRate>${VAT_RATE}</vatRate>
+        <vatRateNetAmount>${lineNetAmount}</vatRateNetAmount>
+        <vatRateVatAmount>${lineVatAmount}</vatRateVatAmount>
         <vatRateGrossAmount>${amount}</vatRateGrossAmount>
       </summaryByVatRate>
       <summarySimplified>
