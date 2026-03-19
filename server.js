@@ -8,7 +8,7 @@
 import 'dotenv/config';
 import express from 'express';
 import Stripe from 'stripe';
-import { issueInvoiceFromStripe } from './lib/issue-from-stripe.js';
+import { issueInvoiceFromStripe, issueInvoiceFromStripeInvoice } from './lib/issue-from-stripe.js';
 
 const app = express();
 const PORT = process.env.PORT || 4242;
@@ -35,22 +35,34 @@ app.post('/api/stripe-webhook', express.raw({ type: 'application/json' }), async
     return res.status(400).json({ error: `Webhook Error: ${err.message}` });
   }
 
-  if (event.type !== 'checkout.session.completed') {
-    return res.json({ received: true });
+  if (event.type === 'invoice.paid') {
+    const invoice = event.data.object;
+    console.log('Stripe számla befizetve:', invoice.id);
+    const result = await issueInvoiceFromStripeInvoice(invoice);
+    if (result.success) {
+      console.log('NAV számla elküldve:', result.invoiceNumber, result.transactionId);
+      return res.json({ received: true, invoiceNumber: result.invoiceNumber });
+    }
+    console.error('NAV számla hiba:', result.error);
+    return res.status(500).json({ error: result.error, received: true });
   }
 
-  const session = event.data.object;
-  console.log('Stripe fizetés sikeres:', session.id);
-
-  const result = await issueInvoiceFromStripe(session);
-
-  if (result.success) {
-    console.log('NAV számla elküldve:', result.invoiceNumber, result.transactionId);
-    return res.json({ received: true, invoiceNumber: result.invoiceNumber });
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    if (session.mode === 'subscription') {
+      return res.json({ received: true });
+    }
+    console.log('Stripe fizetés sikeres:', session.id);
+    const result = await issueInvoiceFromStripe(session);
+    if (result.success) {
+      console.log('NAV számla elküldve:', result.invoiceNumber, result.transactionId);
+      return res.json({ received: true, invoiceNumber: result.invoiceNumber });
+    }
+    console.error('NAV számla hiba:', result.error);
+    return res.status(500).json({ error: result.error, received: true });
   }
 
-  console.error('NAV számla hiba:', result.error);
-  return res.status(500).json({ error: result.error, received: true });
+  return res.json({ received: true });
 });
 
 app.listen(PORT, () => {
